@@ -37,9 +37,8 @@ CXXSTD  ?= $(eval CXXSTD := $$(shell PROBE=$$$$([ -f mdbx.c++ ] && echo mdbx.c++
 CXXFLAGS = $(strip $(CXXSTD) $(filter-out -std=gnu11,$(CFLAGS)))
 
 # TIP: Try append '--no-as-needed,-lrt' for ability to built with modern glibc, but then use with the old.
-LIBS    ?= $(strip -lm $(shell uname | grep -qi SunOS && echo "-lkstat") $(shell uname | grep -qi -e Darwin -e OpenBSD || echo "-lrt") $(shell uname | grep -qi Windows && echo "-lntdll"))
-
-LDFLAGS ?= $(strip $(shell $(LD) --help 2>/dev/null | grep -q -- --gc-sections && echo '-Wl,--gc-sections,-z,relro,-O1')$(shell $(LD) --help 2>/dev/null | grep -q -- -dead_strip && echo '-Wl,-dead_strip'))
+LIBS    ?= $(shell $(uname2libs))
+LDFLAGS ?= $(shell $(uname2ldflags))
 EXE_LDFLAGS ?= -pthread
 
 ################################################################################
@@ -52,6 +51,33 @@ define uname2sosuffix
     *) echo so;;
   esac
 endef
+define uname2ldflags
+  case "$(UNAME)" in
+    CYGWIN*|MINGW*|MSYS*|Windows*)
+      echo '-Wl,--gc-sections,-O1'
+      ;;
+    *)
+      "$(LD)" --help 2>/dev/null | grep -q -- --gc-sections && echo '-Wl,--gc-sections,-z,relro,-O1'
+      "$(LD)" --help 2>/dev/null | grep -q -- -dead_strip && echo '-Wl,-dead_strip'
+      ;;
+  esac
+endef
+define uname2libs
+  case "$(UNAME)" in
+    CYGWIN*|MINGW*|MSYS*|Windows*)
+      echo '-lm -lntdll -lwinmm'
+      ;;
+    *SunOS*|*Solaris*)
+      echo '-lm -lkstat -lrt'
+      ;;
+    *Darwin*|OpenBSD*)
+      echo '-lm'
+      ;;
+    *)
+      echo '-lm -lrt'
+      ;;
+  esac
+endef
 SO_SUFFIX  := $(shell $(uname2sosuffix))
 HEADERS    := mdbx.h mdbx.h++
 LIBRARIES  := libmdbx.a libmdbx.$(SO_SUFFIX)
@@ -59,7 +85,7 @@ TOOLS      := mdbx_stat mdbx_copy mdbx_dump mdbx_load mdbx_chk mdbx_drop
 MANPAGES   := mdbx_stat.1 mdbx_copy.1 mdbx_dump.1 mdbx_load.1 mdbx_chk.1 mdbx_drop.1
 TIP        := // TIP:
 
-.PHONY: all help options lib libs tools clean install uninstall check_buildflags_tag
+.PHONY: all help options lib libs tools clean install uninstall check_buildflags_tag tools-static
 .PHONY: install-strip install-no-strip strip libmdbx mdbx show-options lib-static lib-shared
 
 ifeq ("$(origin V)", "command line")
@@ -86,7 +112,8 @@ help:
 	@echo "  make help                - print this help"
 	@echo "  make options             - list build options"
 	@echo "  make lib                 - build libraries, also lib-static and lib-shared"
-	@echo "  make tools               - built tools"
+	@echo "  make tools               - build the tools"
+	@echo "  make tools-static        - build the tools with statically linking with system libraries and compiler runtime"
 	@echo "  make clean               "
 	@echo "  make install             "
 	@echo "  make uninstall           "
@@ -142,6 +169,7 @@ options:
 lib libs libmdbx mdbx: libmdbx.a libmdbx.$(SO_SUFFIX)
 
 tools: $(TOOLS)
+tools-static: $(addsuffix .static,$(TOOLS)) $(addsuffix .static-lto,$(TOOLS))
 
 strip: all
 	@echo '  STRIP libmdbx.$(SO_SUFFIX) $(TOOLS)'
@@ -151,7 +179,8 @@ clean:
 	@echo '  REMOVE ...'
 	$(QUIET)rm -rf $(TOOLS) mdbx_test @* *.[ao] *.[ls]o *.$(SO_SUFFIX) *.dSYM *~ tmp.db/* \
 		*.gcov *.log *.err src/*.o test/*.o mdbx_example dist \
-		config.h src/config.h src/version.c *.tar* buildflags.tag
+		config.h src/config.h src/version.c *.tar* buildflags.tag \
+		mdbx_*.static mdbx_*.static-lto
 
 MDBX_BUILD_FLAGS =$(strip $(MDBX_BUILD_OPTIONS) $(CXXSTD) $(CFLAGS) $(LDFLAGS) $(LIBS))
 check_buildflags_tag:
@@ -200,9 +229,18 @@ mdbx++-static.o: config.h mdbx.c++ mdbx.h mdbx.h++ $(lastword $(MAKEFILE_LIST))
 	@echo '  CC $@'
 	$(QUIET)$(CXX) $(CXXFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' -ULIBMDBX_EXPORTS -c mdbx.c++ -o $@
 
-mdbx_%:	mdbx_%.c libmdbx.a
+mdbx_%:	mdbx_%.c mdbx-static.o
 	@echo '  CC+LD $@'
 	$(QUIET)$(CC) $(CFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' $^ $(EXE_LDFLAGS) $(LIBS) -o $@
+
+mdbx_%.static: mdbx_%.c mdbx-static.o
+	@echo '  CC+LD $@'
+	$(QUIET)$(CC) $(CFLAGS) $(MDBX_BUILD_OPTIONS) '-DMDBX_CONFIG_H="config.h"' $^ $(EXE_LDFLAGS) -static -Wl,--strip-all -o $@
+
+mdbx_%.static-lto: mdbx_%.c config.h mdbx.c mdbx.h
+	@echo '  CC+LD $@'
+	$(QUIET)$(CC) $(CFLAGS) -Os -flto $(MDBX_BUILD_OPTIONS) '-DLIBMDBX_API=' '-DMDBX_CONFIG_H="config.h"' \
+		$< mdbx.c $(EXE_LDFLAGS) $(LIBS) -static -Wl,--strip-all -o $@
 
 
 install: $(LIBRARIES) $(TOOLS) $(HEADERS)

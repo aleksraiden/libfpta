@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY 7ebe63abaae8610ec036b3dcd4d2f2721ec01402afe3252d5634f893f28ee8e7_v0_11_6_4_ga6b506be
+#define MDBX_BUILD_SOURCERY 4a6f84447b4f6a5bb419b7b0a49233ca2b7f6140ccdf84802762543677803092_v0_11_6_23_gcabead30
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -89,6 +89,11 @@
 #pragma warning(disable : 5045) /* Compiler will insert Spectre mitigation...  \
                                  */
 #endif
+#if _MSC_VER > 1914
+#pragma warning(                                                               \
+    disable : 5105) /* winbase.h(9531): warning C5105: macro expansion         \
+                       producing 'defined' has undefined behavior */
+#endif
 #pragma warning(disable : 4710) /* 'xyz': function not inlined */
 #pragma warning(disable : 4711) /* function 'xyz' selected for automatic       \
                                    inline expansion */
@@ -117,6 +122,11 @@
 #if defined(__GNUC__) && __GNUC__ < 9
 #pragma GCC diagnostic ignored "-Wattributes"
 #endif /* GCC < 9 */
+
+#if (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__)) &&    \
+    !defined(__USE_MINGW_ANSI_STDIO)
+#define __USE_MINGW_ANSI_STDIO 1
+#endif /* __USE_MINGW_ANSI_STDIO */
 
 #include "mdbx.h"
 /*
@@ -226,6 +236,11 @@
 #if !defined(__noop) && !defined(_MSC_VER)
 #   define __noop(...) do {} while(0)
 #endif /* __noop */
+
+#if defined(__fallthrough) &&                                                  \
+    (defined(__MINGW__) || defined(__MINGW32__) || defined(__MINGW64__))
+#undef __fallthrough
+#endif /* __fallthrough workaround for MinGW */
 
 #ifndef __fallthrough
 #  if defined(__cplusplus) && (__has_cpp_attribute(fallthrough) &&             \
@@ -1009,7 +1024,7 @@ typedef union bin128 {
 
 #if defined(_WIN32) || defined(_WIN64)
 typedef union MDBX_srwlock {
-  struct {
+  __anonymous_struct_extension__ struct {
     long volatile readerCount;
     long volatile writerCount;
   };
@@ -9626,7 +9641,7 @@ bailout:
     }
 #endif /* MDBX_USE_VALGRIND */
   } else {
-    if (rc != MDBX_UNABLE_EXTEND_MAPSIZE && rc != MDBX_RESULT_TRUE) {
+    if (rc != MDBX_UNABLE_EXTEND_MAPSIZE && rc != MDBX_EPERM) {
       mdbx_error("failed resize datafile/mapping: "
                  "present %" PRIuPTR " -> %" PRIuPTR ", "
                  "limit %" PRIuPTR " -> %" PRIuPTR ", errcode %d",
@@ -12108,7 +12123,7 @@ static int mdbx_txn_end(MDBX_txn *txn, const unsigned mode) {
         /* undo resize performed by child txn */
         rc = mdbx_mapresize_implicit(env, parent->mt_next_pgno,
                                      parent->mt_geo.now, parent->mt_geo.upper);
-        if (rc == MDBX_RESULT_TRUE) {
+        if (rc == MDBX_EPERM) {
           /* unable undo resize (it is regular for Windows),
            * therefore promote size changes from child to the parent txn */
           mdbx_warning("unable undo resize performed by child txn, promote to "
@@ -12117,6 +12132,7 @@ static int mdbx_txn_end(MDBX_txn *txn, const unsigned mode) {
                        parent->mt_geo.upper);
           parent->mt_geo.now = txn->mt_geo.now;
           parent->mt_geo.upper = txn->mt_geo.upper;
+          parent->mt_flags |= MDBX_TXN_DIRTY;
           rc = MDBX_SUCCESS;
         } else if (unlikely(rc != MDBX_SUCCESS)) {
           mdbx_error("error %d while undo resize performed by child txn, fail "
@@ -14648,7 +14664,7 @@ static int mdbx_sync_locked(MDBX_env *env, unsigned flags,
                  pending->mm_geo.now, shrink);
     rc = mdbx_mapresize_implicit(env, pending->mm_geo.next, pending->mm_geo.now,
                                  pending->mm_geo.upper);
-    if (MDBX_IS_ERROR(rc))
+    if (rc != MDBX_SUCCESS && rc != MDBX_EPERM)
       goto fail;
     mdbx_assert(env, meta_checktxnid(env, target, true));
   }
@@ -26358,7 +26374,7 @@ __dll_export
     " MDBX_OSX_SPEED_INSTEADOF_DURABILITY=" MDBX_STRINGIFY(MDBX_OSX_SPEED_INSTEADOF_DURABILITY)
 #endif /* MacOS */
 #if defined(_WIN32) || defined(_WIN64)
-    " MDBX_WITHOUT_MSVC_CRT=" MDBX_STRINGIFY(MDBX_AVOID_CRT)
+    " MDBX_WITHOUT_MSVC_CRT=" MDBX_STRINGIFY(MDBX_WITHOUT_MSVC_CRT)
     " MDBX_BUILD_SHARED_LIBRARY=" MDBX_STRINGIFY(MDBX_BUILD_SHARED_LIBRARY)
 #if !MDBX_BUILD_SHARED_LIBRARY
     " MDBX_MANUAL_MODULE_HANDLER=" MDBX_STRINGIFY(MDBX_MANUAL_MODULE_HANDLER)
@@ -28069,7 +28085,7 @@ MDBX_INTERNAL_FUNC int mdbx_mresize(const int flags, mdbx_mmap_t *map,
    *  - extend read-only mapping;
    * Therefore we should unmap/map entire section. */
   if ((flags & MDBX_MRESIZE_MAY_UNMAP) == 0)
-    return MDBX_RESULT_TRUE;
+    return MDBX_EPERM;
 
   /* Unpoisoning is required for ASAN to avoid false-positive diagnostic
    * when this memory will re-used by malloc or another mmapping.
@@ -28179,7 +28195,7 @@ retry_mapview:;
     if (map->address && (size != map->current || limit != map->limit)) {
       /* try remap with previously size and limit,
        * but will return MDBX_UNABLE_EXTEND_MAPSIZE on success */
-      rc = (limit > map->limit) ? MDBX_UNABLE_EXTEND_MAPSIZE : MDBX_RESULT_TRUE;
+      rc = (limit > map->limit) ? MDBX_UNABLE_EXTEND_MAPSIZE : MDBX_EPERM;
       size = map->current;
       ReservedSize = limit = map->limit;
       goto retry_file_and_section;
@@ -28203,8 +28219,7 @@ retry_mapview:;
   if (flags & MDBX_RDONLY) {
     map->current = (map->filesize > limit) ? limit : (size_t)map->filesize;
     if (map->current != size)
-      rc =
-          (size > map->current) ? MDBX_UNABLE_EXTEND_MAPSIZE : MDBX_RESULT_TRUE;
+      rc = (size > map->current) ? MDBX_UNABLE_EXTEND_MAPSIZE : MDBX_EPERM;
   } else {
     if (map->filesize != size) {
       rc = mdbx_ftruncate(map->fd, size);
@@ -29098,9 +29113,9 @@ __dll_export
         0,
         11,
         6,
-        4,
-        {"2022-03-25T13:54:34+03:00", "48c2c9f4cfff32e32d043427a7c46b342ddf988f", "a6b506be45dbfe1bb3ab88ce8ac6e351adbe9f40",
-         "v0.11.6-4-ga6b506be"},
+        23,
+        {"2022-03-31T00:31:49+03:00", "9863d5f8d3eff67be3887c1fccc6de9c8404cee5", "cabead30b5a8c2990d10d0e1661e3733c1089396",
+         "v0.11.6-23-gcabead30"},
         sourcery};
 
 __dll_export
@@ -29871,6 +29886,11 @@ MDBX_GetTickCount64 mdbx_GetTickCount64;
 MDBX_RegGetValueA mdbx_RegGetValueA;
 #endif /* xMDBX_ALLOY */
 
+#if __GNUC_PREREQ(8, 0)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-function-type"
+#endif /* GCC/MINGW */
+
 static void mdbx_winnt_import(void) {
   const HINSTANCE hNtdll = GetModuleHandleA("ntdll.dll");
 
@@ -29921,6 +29941,10 @@ static void mdbx_winnt_import(void) {
     mdbx_srwlock_ReleaseExclusive = stub_srwlock_ReleaseExclusive;
   }
 }
+
+#if __GNUC_PREREQ(8, 0)
+#pragma GCC diagnostic pop
+#endif /* GCC/MINGW */
 
 #endif /* Windows LCK-implementation */
 /*
