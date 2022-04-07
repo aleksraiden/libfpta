@@ -527,6 +527,11 @@ if(MDBX_BUILD_CXX AND NOT CMAKE_CXX_COMPILER_LOADED)
   message(FATAL_ERROR "MDBX_BUILD_CXX=${MDBX_BUILD_CXX}: The C++ compiler is required to build the C++API.")
 endif()
 
+if(MDBX_BUILD_CXX)
+  # determine library for C++ std::filesystem
+  probe_libcxx_filesystem()
+endif()
+
 # Get version
 fetch_version(MDBX "${CMAKE_CURRENT_SOURCE_DIR}" FALSE)
 message(STATUS "libmdbx version is ${MDBX_VERSION}")
@@ -612,8 +617,12 @@ macro(libmdbx_setup_libs TARGET MODE)
   elseif(${CMAKE_SYSTEM_NAME} STREQUAL "Android")
     target_link_libraries(${TARGET} ${MODE} log)
   endif()
-  if(MDBX_CXX_STANDARD GREATER_EQUAL 17 AND LIBCXX_FILESYSTEM AND MDBX_BUILD_CXX)
-    target_link_libraries(${TARGET} ${MODE} ${LIBCXX_FILESYSTEM})
+  if(LIBCXX_FILESYSTEM AND MDBX_BUILD_CXX)
+    if(CMAKE_COMPILER_IS_ELBRUSCXX AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 1.26.0
+        AND NOT CMAKE_VERSION VERSION_LESS 3.13)
+      target_link_options(${TARGET} PUBLIC "-Wl,--allow-multiple-definition")
+    endif()
+    target_link_libraries(${TARGET} PUBLIC ${LIBCXX_FILESYSTEM})
   endif()
 endmacro()
 
