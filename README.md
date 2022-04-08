@@ -8,17 +8,17 @@ for tabular and semistructured data:
 multiprocessing with zero-overhead, full ACID semantics with MVCC,
 variety of indexes, saturation, sequences and much more.
 
-
-*The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
-
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
-[![Build Status](https://travis-ci.org/erthink/libfpta.svg?branch=master)](https://travis-ci.org/erthink/libfpta)
-[![Build status](https://ci.appveyor.com/api/projects/status/wiixsody1o9474g9/branch/master?svg=true)](https://ci.appveyor.com/project/erthink/libfpta/branch/master)
+[![GithubCI](https://github.com/erthink/libfpta/workflows/CI/badge.svg)](https://github.com/erthink/libfpta/actions?query=workflow%3ACI)
 [![CircleCI](https://circleci.com/gh/erthink/libfpta/tree/master.svg?style=svg)](https://circleci.com/gh/erthink/libfpta/tree/master)
-[![Coverity Scan Status](https://scan.coverity.com/projects/12920/badge.svg)](https://scan.coverity.com/projects/erthink-libfpta)
+[![AppveyorCI](https://ci.appveyor.com/api/projects/status/wiixsody1o9474g9/branch/master?svg=true)](https://ci.appveyor.com/project/erthink/libfpta/branch/master)
+[![CirrusCI](https://api.cirrus-ci.com/github/erthink/libfpta.svg)](https://cirrus-ci.com/github/erthink/libfpta)
+[![Coverity Scan](https://scan.coverity.com/projects/12920/badge.svg)](https://scan.coverity.com/projects/erthink-libfpta)
 
 English version [by Google](https://github-com.translate.goog/erthink/libfpta/tree/master?_x_tr_sl=ru&_x_tr_tl=en)
 and [by Yandex](https://translate.yandex.ru/translate?url=https%3A%2F%2Fgithub.com%2Ferthink%2Flibfpta%2Ftree%2Fmaster&lang=ru-en).
+
+*The Future will (be) [Positive](https://www.ptsecurity.com). Всё будет хорошо.*
 
 
 ## Кратко
