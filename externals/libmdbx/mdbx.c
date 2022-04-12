@@ -12,7 +12,7 @@
  * <http://www.OpenLDAP.org/license.html>. */
 
 #define xMDBX_ALLOY 1
-#define MDBX_BUILD_SOURCERY cbd02b29a643d902b29845ce5f10e668650fcd369eb1872f3c161611d9d68e82_v0_11_6_34_g3872c0ab
+#define MDBX_BUILD_SOURCERY 29a8b361b4d905c31c159e191cd8450970aeb8646b37ec4aedbdf8703193ab80_v0_11_6_36_g15cc7d5e
 #ifdef MDBX_CONFIG_H
 #include MDBX_CONFIG_H
 #endif
@@ -8453,13 +8453,21 @@ static int mdbx_iov_write(MDBX_txn *const txn, struct mdbx_iov_ctx *ctx) {
                                      ctx->iov_bytes);
   }
 
+  unsigned iov_items = ctx->iov_items;
+#if MDBX_ENABLE_PGOP_STAT
+  txn->mt_env->me_lck->mti_pgop_stat.wops.weak += iov_items;
+#endif /* MDBX_ENABLE_PGOP_STAT */
+  ctx->iov_items = 0;
+  ctx->iov_bytes = 0;
+
   uint64_t timestamp = 0;
-  for (unsigned i = 0; i < ctx->iov_items; i++) {
+  for (unsigned i = 0; i < iov_items; i++) {
     MDBX_page *wp = (MDBX_page *)ctx->iov[i].iov_base;
     const MDBX_page *rp = pgno2page(txn->mt_env, wp->mp_pgno);
     /* check with timeout as the workaround
      * for https://github.com/erthink/libmdbx/issues/269 */
-    while (unlikely(memcmp(wp, rp, ctx->iov[i].iov_len) != 0)) {
+    while (likely(rc == MDBX_SUCCESS) &&
+           unlikely(memcmp(wp, rp, ctx->iov[i].iov_len) != 0)) {
       if (!timestamp) {
         timestamp = mdbx_osal_monotime();
         mdbx_iov_done(txn, ctx);
@@ -8470,7 +8478,7 @@ static int mdbx_iov_write(MDBX_txn *const txn, struct mdbx_iov_ctx *ctx) {
         mdbx_error(
             "bailout waiting for %" PRIaPGNO " page arrival %s", wp->mp_pgno,
             "(workaround for incoherent flaw of unified page/buffer cache)");
-        return MDBX_CORRUPTED;
+        rc = MDBX_CORRUPTED;
       }
 #if defined(_WIN32) || defined(_WIN64)
       SwitchToThread();
@@ -8484,12 +8492,6 @@ static int mdbx_iov_write(MDBX_txn *const txn, struct mdbx_iov_ctx *ctx) {
     }
     mdbx_dpage_free(env, wp, bytes2pgno(env, ctx->iov[i].iov_len));
   }
-
-#if MDBX_ENABLE_PGOP_STAT
-  txn->mt_env->me_lck->mti_pgop_stat.wops.weak += ctx->iov_items;
-#endif /* MDBX_ENABLE_PGOP_STAT */
-  ctx->iov_items = 0;
-  ctx->iov_bytes = 0;
   return rc;
 }
 
@@ -29113,9 +29115,9 @@ __dll_export
         0,
         11,
         6,
-        34,
-        {"2022-04-08T01:01:01+03:00", "f48cba7133d7d0981a70d79f2a6dbd5972e1ae0d", "3872c0ab741b9e1073a74025b9c10bb0db6ddf02",
-         "v0.11.6-34-g3872c0ab"},
+        36,
+        {"2022-04-12T10:20:50+03:00", "b1b48e6c57aed0582c0db7206e658e65028ae128", "15cc7d5ed3fa9bcbb55274c012bd45ef45eb2d6f",
+         "v0.11.6-36-g15cc7d5e"},
         sourcery};
 
 __dll_export
